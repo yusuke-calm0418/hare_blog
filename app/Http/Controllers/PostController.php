@@ -16,7 +16,10 @@ class PostController extends Controller
      */
     public function index()
     {
-        return view('posts.index');
+        $posts = Post::latest()->paginate(4);
+        // $posts = Post::orderBy('create_at', 'desc')->get();
+
+        return view('posts.index', compact('posts'));
     }
 
     /**
@@ -143,6 +146,6 @@ class PostController extends Controller
 
     private static function createFileName($file)
     {
-        return date('YmdHis') . '_'. $file->getClientOriginalName();
+        return date('YmdHis') . '_' . $file->getClientOriginalName();
     }
 }
