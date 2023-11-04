@@ -38,8 +38,7 @@ class PostController extends Controller
 
         // 画像を一度変換する、フォームから送信される、imageはname属性と紐づいている（名前を被らせないために）
         $file = $request->file('image');
-        $post->image = date('YmdHis') . '_' .
-            $file->getClientOriginalName();
+        $post->image = self::createFileName($file);
 
         DB::beginTransaction();
         try {
@@ -76,7 +75,9 @@ class PostController extends Controller
      */
     public function edit(string $id)
     {
-        //
+        $post = Post::find($id);
+
+        return view('posts.edit', compact('post'));
     }
 
     /**
@@ -84,7 +85,52 @@ class PostController extends Controller
      */
     public function update(UpdatePostRequest $request, string $id)
     {
-        //
+        $post = Post::find($id);
+
+        if ($request->user()->cannot('update', $post)) {
+            return redirect()->route('posts.show', $post)
+                ->withErrors('自分の記事以外は更新できません');
+        }
+
+        $file = $request->file('image');
+        if ($file) {
+            $delete_file_path = 'images/posts/' . $post->image;
+            $post->image = self::createFileName($file);
+        }
+        $post->fill($request->all());
+
+        // ここからトランザクション開始
+        DB::beginTransaction();
+        try {
+            // 更新
+            $post->save();
+
+            if ($file) {
+                // 画像アップロード
+                if (!Storage::putFileAs('images/posts', $file, $post->image)) {
+                    // 例外を投げてロールバックさせる
+                    throw new \Exception('画像ファイルの保存に失敗しました。');
+                }
+
+                // 画像削除
+                if (!Storage::delete($delete_file_path)) {
+                    //アップロードした画像を削除する
+                    Storage::delete('images/posts/' . $post->image);
+                    //例外を投げてロールバックさせる
+                    throw new \Exception('画像ファイルの削除に失敗しました。');
+                }
+            }
+
+            // トランザクション終了(成功)
+            DB::commit();
+        } catch (\Exception $e) {
+            // トランザクション終了(失敗)
+            DB::rollback();
+            return back()->withInput()->withErrors($e->getMessage());
+        }
+
+        return redirect()->route('posts.show', $post)
+            ->with('notice', '記事を更新しました');
     }
 
     /**
@@ -93,5 +139,10 @@ class PostController extends Controller
     public function destroy(string $id)
     {
         //
+    }
+
+    private static function createFileName($file)
+    {
+        return date('YmdHis') . '_'. $file->getClientOriginalName();
     }
 }
